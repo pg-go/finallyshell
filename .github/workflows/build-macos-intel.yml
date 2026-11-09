@@ -1,0 +1,102 @@
+name: build-macos-intel
+
+# 手动跑一次,编一个 Intel Mac 能用的 dmg:
+#
+#   Actions -> build-macos-intel -> Run workflow
+#
+# 跑完在那次运行的 Artifacts 里下载 finallyshell-<版本>-amd64.dmg。
+#
+# 为什么要单独一个 workflow,不直接走 release.yml:
+# release.yml 只在推 production 分支时跑,而且 Build 步要求
+# MYGO_UPDATER_PRIVATE_KEY 这个 secret(上游作者的更新签名私钥,
+# fork 里没有,也不该有),缺了就直接失败;它还要一次编齐四个平台、
+# 发正式 Release。Intel 构建的代码(fd545d7)已经在 main 里,但上游
+# v0.2.1(2026-11-08)发在它之前,所以 Release 里只有 arm64 的 dmg,
+# 没有 amd64 的。这个 workflow 只编 darwin/amd64,不签更新文件、
+# 不发 Release,编出来的 dmg 就是给 Intel Mac 直接装的(不能自动更新,
+# 下次有新版再跑一次就行)。
+#
+# 注意:不要改 mygo.json 里的 updates.publicKey / updates.github,
+# TestUpdatesConfig 要求它们一直指向上游;这个 dmg 不带更新签名,
+# 也就不会去读上游的更新清单。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-macos-intel
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Version
+        id: version
+        run: |
+          version=$(go run ./tools/release version)
+          if [ -z "$version" ]; then
+            version=$(jq -r '.version' mygo.json)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building finallyshell $version for darwin/amd64"
+      - name: Set the version and add the licenses
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          jq --arg v "$VERSION" '.version = $v' mygo.json > mygo.json.tmp
+          mv mygo.json.tmp mygo.json
+          mkdir -p resources
+          cp LICENSE resources/LICENSE.txt
+          go run ./tools/release licenses > resources/THIRD_PARTY_LICENSES.txt
+      - name: Natives cache folder
+        id: natives
+        run: |
+          dir="$HOME/Library/Caches/mygo/natives"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "key=mygo-natives-macOS-darwin-amd64-${{ hashFiles('go.sum') }}" >> "$GITHUB_OUTPUT"
+      - name: Restore the native libraries
+        id: restore
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ steps.natives.outputs.dir }}
+          key: ${{ steps.natives.outputs.key }}
+      - name: Build
+        # 不带 MYGO_UPDATER_PRIVATE_KEY:按 docs/en/development.md,
+        # 没 secret 也能编出应用,只是跳过更新文件(update-*.json、
+        # .tar.gz、.delta),这个 dmg 不自动更新。
+        # 用 bash 跑脚本,不依赖它的可执行位。
+        # macos-latest 现在是 arm64 runner,Go 交叉编到 amd64,
+        # MyGo 会去取 libghostty-vt-darwin-amd64.dylib,和
+        # release.yml 里 darwin/amd64 那项一样。
+        run: |
+          bash .github/scripts/build-with-retries.sh go tool mygo build -platform darwin/amd64 -o dist
+      - name: Save the native libraries
+        if: steps.restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.natives.outputs.dir }}
+          key: ${{ steps.natives.outputs.key }}
+      - name: Collect the disk image
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir upload
+          cp dist/darwin-amd64/*.dmg upload/
+          (cd upload && sha256sum *.dmg > SHA256SUMS)
+          ls -l upload
+          cat upload/SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: finallyshell-${{ steps.version.outputs.version }}-amd64
+          path: upload/
+          if-no-files-found: error

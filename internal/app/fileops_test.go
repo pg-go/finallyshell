@@ -134,6 +134,58 @@ func TestFileOpsInTable(t *testing.T) {
 		t.Errorf("logs: %v", err)
 	}
 
+	// Change permissions, from the menu: the mode starts as the file's.
+	f.menu(t, "deploy.sh", locales.ChangePermissions())
+	if d := a.fileDlg; d == nil || d.op != opChmod || d.mode != "750" || !tt.HasText(locales.ChangePermissionsTitle("deploy.sh")) {
+		t.Fatalf("chmod: dialog %+v; texts %q", a.fileDlg, tt.Texts())
+	}
+	saveShot(t, tt, "file-chmod-en.png")
+	// A mode that isn't octal is refused before it goes to the server.
+	a.fileDlg.mode = "888"
+	if err := tt.Click(locales.Ok()); err != nil {
+		t.Fatal(err)
+	}
+	f.settled(t)
+	if a.fileDlg == nil || !tt.HasText(locales.BadFileMode()) {
+		t.Fatalf("no error for 888; dialog %+v; texts %q", a.fileDlg, tt.Texts())
+	}
+	if fi, _ := os.Stat(filepath.Join(f.dir, "deploy.sh")); fi.Mode().Perm() != 0o750 {
+		t.Errorf("888 changed deploy.sh to %v", fi.Mode())
+	}
+	a.fileDlg.mode = "640"
+	if err := tt.Click(locales.Ok()); err != nil {
+		t.Fatal(err)
+	}
+	f.settled(t)
+	if a.fileDlg != nil {
+		t.Fatalf("dialog %+v", a.fileDlg)
+	}
+	if fi, _ := os.Stat(filepath.Join(f.dir, "deploy.sh")); fi.Mode().Perm() != 0o640 {
+		t.Errorf("deploy.sh is %v", fi.Mode())
+	}
+
+	// Several at once: the mode starts empty, as theirs may differ.
+	s.files.chosen.Clear()
+	s.files.chosen.Add("notes.md")
+	s.files.chosen.Add("big.log")
+	f.menu(t, "notes.md", locales.ChangePermissions())
+	if d := a.fileDlg; d == nil || d.op != opChmod || d.mode != "" || !tt.HasText(locales.ChangePermissionsFilesTitle(2)) {
+		t.Fatalf("chmod several: dialog %+v; texts %q", a.fileDlg, tt.Texts())
+	}
+	a.fileDlg.mode = "600"
+	if err := tt.Click(locales.Ok()); err != nil {
+		t.Fatal(err)
+	}
+	f.settled(t)
+	if a.fileDlg != nil {
+		t.Fatalf("dialog %+v", a.fileDlg)
+	}
+	for _, name := range []string{"notes.md", "big.log"} {
+		if fi, _ := os.Stat(filepath.Join(f.dir, name)); fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s is %v", name, fi.Mode())
+		}
+	}
+
 	// F2 renames the row chosen.
 	tt.ClickAt(rowCenter(t, tt, "legacy.ini"))
 	tt.Key(0, ui.KeyF2)
@@ -209,6 +261,12 @@ func TestFileOpsInTable(t *testing.T) {
 	saveShot(t, tt, "file-rename-zh.png")
 	tt.Key(0, ui.KeyEscape)
 	tt.Frame()
+	f.menu(t, "deploy.sh", locales.ChangePermissions())
+	if !tt.HasText("修改“deploy.sh”的权限") {
+		t.Errorf("Chinese chmod: texts %q", tt.Texts())
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
 	tt.ClickAt(rowCenter(t, tt, "deploy.sh"))
 	tt.Key(0, ui.KeyDelete)
 	tt.Frame()
@@ -232,6 +290,17 @@ func TestFileOpsInTree(t *testing.T) {
 	a.openDir(s, filepath.Join(f.dir, "docs"))
 	f.settled(t)
 	docs := s.files.cwd
+
+	// The tree's menu changes the permissions of the folder right-clicked.
+	f.treeMenu(t, filepath.Join(f.dir, "srv"), locales.ChangePermissions())
+	if d := a.fileDlg; d == nil || d.op != opChmod || d.dir != f.dir || !slices.Equal(d.names, []string{"srv"}) {
+		t.Fatalf("tree chmod: dialog %+v", a.fileDlg)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if a.fileDlg != nil {
+		t.Fatal("Escape left the dialog")
+	}
 
 	f.treeMenu(t, filepath.Join(f.dir, "srv"), locales.NewFolder())
 	if a.fileDlg == nil || a.fileDlg.dir != filepath.Join(f.dir, "srv") {

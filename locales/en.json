@@ -1159,6 +1159,25 @@
       }
     }
   },
+  "changePermissions": "Change permissions",
+  "changePermissionsTitle": "Change permissions of “{name}”",
+  "@changePermissionsTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "changePermissionsFilesTitle": "{count, plural, one {Change permissions of # item} other {Change permissions of # items}}",
+  "@changePermissionsFilesTitle": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "permissionsMode": "Permissions (octal, e.g. 755)",
+  "badFileMode": "Enter a mode such as 755: three or four octal digits.",
   "deleteFilesBody": "{count, plural, one {It is deleted on the server. This can't be undone.} other {They are deleted on the server. This can't be undone.}}",
   "@deleteFilesBody": {
     "placeholders": {

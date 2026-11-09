@@ -17,6 +17,10 @@ import (
 // one with a slash or a NUL in it.
 var ErrBadName = errors.New("bad file name")
 
+// ErrBadMode is a mode that cannot be a file's: anything but three or
+// four octal digits, such as 755 or 4755.
+var ErrBadMode = errors.New("bad file mode")
+
 // ExistsError is a name already taken in its folder.
 type ExistsError struct{ Name string }
 
@@ -79,6 +83,63 @@ func CreateFile(c *sftp.Client, dir, name string) (string, error) {
 		return "", err
 	}
 	return p, f.Close()
+}
+
+// ParseMode reads a numeric mode such as 755 or 4755: three or four
+// octal digits, where a leading fourth digit carries the set-user-ID,
+// set-group-ID and sticky bits, as in chmod.
+func ParseMode(s string) (fs.FileMode, error) {
+	if len(s) != 3 && len(s) != 4 {
+		return 0, ErrBadMode
+	}
+	var v uint32
+	for i := range s {
+		if s[i] < '0' || s[i] > '7' {
+			return 0, ErrBadMode
+		}
+		v = v*8 + uint32(s[i]-'0')
+	}
+	mode := fs.FileMode(v & 0o777).Perm()
+	if len(s) == 4 {
+		// A leading digit above 4 sets more than one special bit:
+		// 7 is set-user-ID, set-group-ID and sticky.
+		d := s[0] - '0'
+		if d&4 != 0 {
+			mode |= fs.ModeSetuid
+		}
+		if d&2 != 0 {
+			mode |= fs.ModeSetgid
+		}
+		if d&1 != 0 {
+			mode |= fs.ModeSticky
+		}
+	}
+	return mode, nil
+}
+
+// FormatMode writes mode as ParseMode reads it: three octal digits, or
+// four when any special bit is set.
+func FormatMode(m fs.FileMode) string {
+	v := uint32(m.Perm())
+	if m&fs.ModeSetuid != 0 {
+		v |= 0o4000
+	}
+	if m&fs.ModeSetgid != 0 {
+		v |= 0o2000
+	}
+	if m&fs.ModeSticky != 0 {
+		v |= 0o1000
+	}
+	if v > 0o777 {
+		return fmt.Sprintf("%04o", v)
+	}
+	return fmt.Sprintf("%03o", v)
+}
+
+// Chmod sets the mode of the file, link or folder at p. A link's target
+// is changed, as chmod follows links.
+func Chmod(c *sftp.Client, p string, mode fs.FileMode) error {
+	return c.Chmod(p, mode)
 }
 
 // removeWorkers is how many files of a folder RemoveAll removes at once:

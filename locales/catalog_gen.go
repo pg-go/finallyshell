@@ -7084,6 +7084,60 @@ func (msgs Messages) DeleteFilesTitle(count int) string {
 	return Catalog.Format(msgs.locale, "deleteFilesTitle", map[string]any{"count": count})
 }
 
+// ChangePermissions says "Change permissions"
+// in the language the app shows.
+func ChangePermissions() string { return In(i18n.Locale()).ChangePermissions() }
+
+// ChangePermissions says "Change permissions"
+// in the language of msgs.
+func (msgs Messages) ChangePermissions() string {
+	return Catalog.Format(msgs.locale, "changePermissions", nil)
+}
+
+// ChangePermissionsTitle says "Change permissions of “{name}”"
+// in the language the app shows.
+func ChangePermissionsTitle(name string) string {
+	return In(i18n.Locale()).ChangePermissionsTitle(name)
+}
+
+// ChangePermissionsTitle says "Change permissions of “{name}”"
+// in the language of msgs.
+func (msgs Messages) ChangePermissionsTitle(name string) string {
+	return Catalog.Format(msgs.locale, "changePermissionsTitle", map[string]any{"name": name})
+}
+
+// ChangePermissionsFilesTitle says "{count, plural, one {Change permissions of # item} other {Change permissions of # items}}"
+// in the language the app shows.
+func ChangePermissionsFilesTitle(count int) string {
+	return In(i18n.Locale()).ChangePermissionsFilesTitle(count)
+}
+
+// ChangePermissionsFilesTitle says "{count, plural, one {Change permissions of # item} other {Change permissions of # items}}"
+// in the language of msgs.
+func (msgs Messages) ChangePermissionsFilesTitle(count int) string {
+	return Catalog.Format(msgs.locale, "changePermissionsFilesTitle", map[string]any{"count": count})
+}
+
+// PermissionsMode says "Permissions (octal, e.g. 755)"
+// in the language the app shows.
+func PermissionsMode() string { return In(i18n.Locale()).PermissionsMode() }
+
+// PermissionsMode says "Permissions (octal, e.g. 755)"
+// in the language of msgs.
+func (msgs Messages) PermissionsMode() string {
+	return Catalog.Format(msgs.locale, "permissionsMode", nil)
+}
+
+// BadFileMode says "Enter a mode such as 755: three or four octal digits."
+// in the language the app shows.
+func BadFileMode() string { return In(i18n.Locale()).BadFileMode() }
+
+// BadFileMode says "Enter a mode such as 755: three or four octal digits."
+// in the language of msgs.
+func (msgs Messages) BadFileMode() string {
+	return Catalog.Format(msgs.locale, "badFileMode", nil)
+}
+
 // DeleteFilesBody says "{count, plural, one {It is deleted on the server. This can't be undone.} other {They are deleted on the server. This …"
 // in the language the app shows.
 func DeleteFilesBody(count int) string { return In(i18n.Locale()).DeleteFilesBody(count) }

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"path"
 	"slices"
 	"strings"
@@ -23,6 +24,7 @@ const (
 	opMkdir
 	opCreate
 	opDelete
+	opChmod
 )
 
 // fileDialog asks for the name of a rename, a new folder or a new file,
@@ -36,6 +38,7 @@ type fileDialog struct {
 	names []string // the names in dir a delete removes
 	dirs  bool     // a delete removes folders, with what they hold
 	name  string
+	mode  string // the numeric mode a chmod sets, such as 755
 	// selectStem selects the name without its extension as the dialog
 	// opens, as Finder and Explorer do for a rename.
 	selectStem bool
@@ -53,6 +56,11 @@ func (d *fileDialog) title() string {
 		return locales.NewFolder()
 	case opCreate:
 		return locales.NewFile()
+	case opChmod:
+		if len(d.names) == 1 {
+			return locales.ChangePermissionsTitle(d.names[0])
+		}
+		return locales.ChangePermissionsFilesTitle(len(d.names))
 	}
 	if len(d.names) == 1 {
 		return locales.DeleteFileTitle(d.names[0])
@@ -100,6 +108,19 @@ func (a *App) askDeleteChosen(s *Session) {
 	a.askDelete(s, f.cwd, names, dirs)
 }
 
+// askChmod asks for the numeric mode of the names in dir. For one item
+// the mode starts as the item's own, when the panel lists it.
+func (a *App) askChmod(s *Session, dir string, names []string) {
+	if s.sftp == nil || dir == "" || len(names) == 0 {
+		return
+	}
+	d := &fileDialog{sess: s, op: opChmod, dir: dir, names: names}
+	if e, ok := s.files.entry(names); ok {
+		d.mode = remotefs.FormatMode(e.Mode)
+	}
+	a.fileDlg = d
+}
+
 func (a *App) closeFileDialog(d *fileDialog) {
 	if d.cancel != nil {
 		d.cancel()
@@ -117,7 +138,14 @@ func (a *App) runFileDialog(d *fileDialog) {
 		return
 	}
 	name := strings.TrimSpace(d.name)
-	if d.op != opDelete && !remotefs.ValidName(name) {
+	var mode fs.FileMode
+	if d.op == opChmod {
+		var err error
+		if mode, err = remotefs.ParseMode(strings.TrimSpace(d.mode)); err != nil {
+			d.err = err
+			return
+		}
+	} else if d.op != opDelete && !remotefs.ValidName(name) {
 		d.err = remotefs.ErrBadName
 		return
 	}
@@ -141,6 +169,12 @@ func (a *App) runFileDialog(d *fileDialog) {
 					break
 				}
 				gone = append(gone, p)
+			}
+		case opChmod:
+			for _, n := range d.names {
+				if err = remotefs.Chmod(sc, path.Join(d.dir, n), mode); err != nil {
+					break
+				}
 			}
 		}
 		a.post(func() {
@@ -239,6 +273,8 @@ func fileOpErrorText(err error) string {
 	switch {
 	case errors.Is(err, remotefs.ErrBadName):
 		return locales.BadFileName()
+	case errors.Is(err, remotefs.ErrBadMode):
+		return locales.BadFileMode()
 	case errors.As(err, &taken):
 		return locales.FileNameTaken(taken.Name)
 	}
@@ -266,6 +302,14 @@ func (a *App) fileDialogView(c *ui.Context, d *fileDialog) {
 				body = locales.DeleteFoldersBody(len(d.names))
 			}
 			ui.Text(c, body)
+		} else if d.op == opChmod {
+			before := d.mode
+			in := ui.TextInput(c, &d.mode).Label(locales.PermissionsMode()).AutoFocus()
+			submit = in.Submitted()
+			if d.mode != before {
+				d.err = nil
+			}
+			empty = strings.TrimSpace(d.mode) == ""
 		} else {
 			before := d.name
 			in := ui.TextInput(c, &d.name).Label(locales.FolderName()).AutoFocus()
@@ -330,6 +374,9 @@ func (a *App) treeMenu(c *ui.Context, m *ui.Menu, s *Session, dir string) {
 		m.Separator()
 		if m.Item(locales.Rename()).Chosen() {
 			a.askRename(s, dir, true)
+		}
+		if m.Item(locales.ChangePermissions()).Chosen() {
+			a.askChmod(s, path.Dir(dir), []string{path.Base(dir)})
 		}
 		if m.Item(locales.Delete()).Chosen() {
 			a.askDelete(s, path.Dir(dir), []string{path.Base(dir)}, true)
